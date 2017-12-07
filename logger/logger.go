@@ -8,12 +8,13 @@ import (
 )
 
 type Log struct {
-	Date         time.Time
-	WaitingTasks []TasksByCity `bson:"waiting_tasks"`
-	ActiveTasks  []TasksByCity `bson:"active_tasks"`
+	Date           time.Time
+	WaitingTasks   []CountByCity `bson:"waiting_tasks"`
+	ActiveTasks    []CountByCity `bson:"active_tasks"`
+	ActiveCouriers []CountByCity `bson:"active_couriers"`
 }
 
-type TasksByCity struct {
+type CountByCity struct {
 	CityID int `gorethink:"group" bson:"city_id"`
 	Count  int `gorethink:"reduction" bson:"count"`
 }
@@ -27,24 +28,56 @@ func (logger TaskLogger) SaveLog() {
 	var log Log
 	log.Date = time.Now()
 
-	// get waiting tasks
+	log.WaitingTasks = logger.getWaitingTasks()
+	log.ActiveTasks = logger.getActiveTasks()
+	log.ActiveCouriers = logger.getActiveCouriers()
+
+	err := logger.mongoDb.C("tasks_log").Insert(log)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (logger TaskLogger) getWaitingTasks() []CountByCity {
+	var waitingTasks []CountByCity
+
 	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 2).Group("city_id").Count().Run(logger.rethinkSession)
 	if err != nil {
 		panic(err)
 	}
-	cursor.All(&log.WaitingTasks)
 
-	// get active tasks
-	cursor, err = r.Table("tasks").GetAllByIndex("status_id", 3, 4).Group("city_id").Count().Run(logger.rethinkSession)
+	cursor.All(&waitingTasks)
+
+	return waitingTasks
+}
+
+func (logger TaskLogger) getActiveTasks() []CountByCity {
+	var activeTasks []CountByCity
+
+	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 3, 4).Group("city_id").Count().Run(logger.rethinkSession)
 	if err != nil {
 		panic(err)
 	}
-	cursor.All(&log.ActiveTasks)
+	cursor.All(&activeTasks)
 
-	err = logger.mongoDb.C("tasks_log").Insert(log)
+	return activeTasks
+}
+
+func (logger TaskLogger) getActiveCouriers() []CountByCity {
+	var activeCouriers []CountByCity
+
+	cursor, err := r.Table("couriers").
+		Filter(r.Row.Field("active_task_delivery").Count().Gt(0).Or(r.Row.Field("active_tasks_express").Count().Gt(0))).
+		Group("city_id").Count().
+		Run(logger.rethinkSession)
+
 	if err != nil {
 		panic(err)
 	}
+
+	cursor.All(&activeCouriers)
+
+	return activeCouriers
 }
 
 func NewTaskLogger(rethinkSession *r.Session, mongoDb *mgo.Database) TaskLogger {
