@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"fmt"
 	"time"
 
 	r "gopkg.in/gorethink/gorethink.v3"
@@ -8,15 +9,27 @@ import (
 )
 
 type Log struct {
-	Date           time.Time
-	WaitingTasks   []CountByCity `bson:"waiting_tasks"`
-	ActiveTasks    []CountByCity `bson:"active_tasks"`
-	ActiveCouriers []CountByCity `bson:"active_couriers"`
+	Date   time.Time
+	Cities []CityStats
 }
 
-type CountByCity struct {
-	CityID int `gorethink:"group" bson:"city_id"`
-	Count  int `gorethink:"reduction" bson:"count"`
+type CityStats struct {
+	CityID   int
+	Tasks    TasksStats
+	Couriers CouriersStats
+}
+
+type TasksStats struct {
+	Waiting, Assigned, InProgress int
+}
+
+type CouriersStats struct {
+	Working, Connected, ConnectedWorking int
+}
+
+type CountByCityStatus struct {
+	CityStatus []int `gorethink:"group"`
+	Count      int   `gorethink:"reduction"`
 }
 
 type TaskLogger struct {
@@ -24,60 +37,65 @@ type TaskLogger struct {
 	mongoDb        *mgo.Database
 }
 
-func (logger TaskLogger) SaveLog() {
-	var log Log
+func (logger TaskLogger) CreateLog() Log {
+	log := Log{}
+
 	log.Date = time.Now()
+	log.Cities = []CityStats{}
 
-	log.WaitingTasks = logger.getWaitingTasks()
-	log.ActiveTasks = logger.getActiveTasks()
-	log.ActiveCouriers = logger.getActiveCouriers()
+	log.populateTasksStatsByCity(logger.getTasksByCityStatus())
 
-	err := logger.mongoDb.C("tasks_log").Insert(log)
+	return log
+}
+
+func (logger TaskLogger) getTasksByCityStatus() []CountByCityStatus {
+	var result []CountByCityStatus
+
+	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 2, 3, 4).Group("city_id", "status_id").Count().Run(logger.rethinkSession)
 	if err != nil {
 		panic(err)
+	}
+
+	cursor.All(&result)
+
+	return result
+}
+
+func (log *Log) populateTasksStatsByCity(stats []CountByCityStatus) {
+	for _, stat := range stats {
+		cityID := stat.CityStatus[0]
+		statusID := stat.CityStatus[1]
+
+		tasksStats := &log.getOrCreateCityStatsByID(cityID).Tasks
+
+		fmt.Println(stat.Count)
+
+		switch statusID {
+		case 2:
+			tasksStats.Waiting = stat.Count
+		case 3:
+			tasksStats.Assigned = stat.Count
+		case 4:
+			tasksStats.InProgress = stat.Count
+		}
 	}
 }
 
-func (logger TaskLogger) getWaitingTasks() []CountByCity {
-	var waitingTasks []CountByCity
-
-	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 2).Group("city_id").Count().Run(logger.rethinkSession)
-	if err != nil {
-		panic(err)
+func (log *Log) getOrCreateCityStatsByID(cityID int) *CityStats {
+	for i, cityStats := range log.Cities {
+		if cityStats.CityID == cityID {
+			return &log.Cities[i]
+		}
 	}
 
-	cursor.All(&waitingTasks)
+	var newCityStats CityStats
+	newCityStats.CityID = cityID
 
-	return waitingTasks
-}
+	log.Cities = append(log.Cities, newCityStats)
 
-func (logger TaskLogger) getActiveTasks() []CountByCity {
-	var activeTasks []CountByCity
+	fmt.Printf("new %p\n", &log.Cities[len(log.Cities)-1])
 
-	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 3, 4).Group("city_id").Count().Run(logger.rethinkSession)
-	if err != nil {
-		panic(err)
-	}
-	cursor.All(&activeTasks)
-
-	return activeTasks
-}
-
-func (logger TaskLogger) getActiveCouriers() []CountByCity {
-	var activeCouriers []CountByCity
-
-	cursor, err := r.Table("couriers").
-		Filter(r.Row.Field("active_task_delivery").Count().Gt(0).Or(r.Row.Field("active_tasks_express").Count().Gt(0))).
-		Group("city_id").Count().
-		Run(logger.rethinkSession)
-
-	if err != nil {
-		panic(err)
-	}
-
-	cursor.All(&activeCouriers)
-
-	return activeCouriers
+	return &log.Cities[len(log.Cities)-1]
 }
 
 func NewTaskLogger(rethinkSession *r.Session, mongoDb *mgo.Database) TaskLogger {
