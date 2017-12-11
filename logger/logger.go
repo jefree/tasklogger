@@ -1,17 +1,12 @@
 package logger
 
 import (
-	"fmt"
 	"time"
 
 	r "gopkg.in/gorethink/gorethink.v3"
 	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
-
-type Log struct {
-	Date   time.Time
-	Cities []CityStats
-}
 
 type CityStats struct {
 	CityID   int
@@ -24,12 +19,26 @@ type TasksStats struct {
 }
 
 type CouriersStats struct {
-	Working, Connected, ConnectedWorking int
+	Working, ConnectedFree, ConnectedWorking int
 }
 
-type CountByCityStatus struct {
+type countByCityStatus struct {
 	CityStatus []int `gorethink:"group"`
 	Count      int   `gorethink:"reduction"`
+}
+
+type workingCouriersByCity struct {
+	CityID int `gorethink:"group"`
+	Count  int `gorethink:"reduction"`
+}
+
+type connectedCourierStats struct {
+	CityID    int `bson:"city_id"`
+	TaskCount int `bson:"task_count"`
+}
+
+type couriersLog struct {
+	Couriers []connectedCourierStats `bson:"couriers"`
 }
 
 type TaskLogger struct {
@@ -44,12 +53,14 @@ func (logger TaskLogger) CreateLog() Log {
 	log.Cities = []CityStats{}
 
 	log.populateTasksStatsByCity(logger.getTasksByCityStatus())
+	log.populateWorkingCouriersByCity(logger.getWorkingCouriersByCity())
+	log.populateConnectedCouriersStatsByCity(logger.getConnectedCouriersStats())
 
 	return log
 }
 
-func (logger TaskLogger) getTasksByCityStatus() []CountByCityStatus {
-	var result []CountByCityStatus
+func (logger TaskLogger) getTasksByCityStatus() []countByCityStatus {
+	var result []countByCityStatus
 
 	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 2, 3, 4).Group("city_id", "status_id").Count().Run(logger.rethinkSession)
 	if err != nil {
@@ -61,14 +72,46 @@ func (logger TaskLogger) getTasksByCityStatus() []CountByCityStatus {
 	return result
 }
 
-func (log *Log) populateTasksStatsByCity(stats []CountByCityStatus) {
+func (logger TaskLogger) getConnectedCouriersStats() []connectedCourierStats {
+	var couriersLog couriersLog
+
+	err := logger.mongoDb.C("couriers_log").Find(bson.M{}).Sort("-date").Limit(1).One(&couriersLog)
+	if err != nil {
+		panic(err)
+	}
+
+	return couriersLog.Couriers
+}
+
+func (logger TaskLogger) getWorkingCouriersByCity() []workingCouriersByCity {
+	var result []workingCouriersByCity
+
+	cursor, err := r.Table("couriers").
+		Filter(r.Row.Field("active_task_delivery").Count().Gt(0).
+			Or(r.Row.Field("active_tasks_express").Count().Gt(0))).
+		Group("city_id").
+		Count().Run(logger.rethinkSession)
+
+	if err != nil {
+		panic(err)
+	}
+
+	cursor.All(&result)
+
+	return result
+}
+
+type Log struct {
+	Date   time.Time
+	Cities []CityStats
+}
+
+func (log *Log) populateTasksStatsByCity(stats []countByCityStatus) {
 	for _, stat := range stats {
 		cityID := stat.CityStatus[0]
 		statusID := stat.CityStatus[1]
 
 		tasksStats := &log.getOrCreateCityStatsByID(cityID).Tasks
-
-		fmt.Println(stat.Count)
 
 		switch statusID {
 		case 2:
@@ -77,6 +120,29 @@ func (log *Log) populateTasksStatsByCity(stats []CountByCityStatus) {
 			tasksStats.Assigned = stat.Count
 		case 4:
 			tasksStats.InProgress = stat.Count
+		}
+	}
+}
+
+func (log *Log) populateWorkingCouriersByCity(workingStats []workingCouriersByCity) {
+	for _, stat := range workingStats {
+		courierStats := &log.getOrCreateCityStatsByID(stat.CityID).Couriers
+		courierStats.Working = stat.Count
+	}
+}
+
+func (log *Log) populateConnectedCouriersStatsByCity(connectedStats []connectedCourierStats) {
+	couriersGroupByCity := groupCouriersByCity(connectedStats)
+
+	for cityID, couriers := range couriersGroupByCity {
+		courierStats := &log.getOrCreateCityStatsByID(cityID).Couriers
+
+		for _, courier := range couriers {
+			if courier.TaskCount > 0 {
+				courierStats.ConnectedWorking++
+			} else {
+				courierStats.ConnectedFree++
+			}
 		}
 	}
 }
@@ -93,9 +159,17 @@ func (log *Log) getOrCreateCityStatsByID(cityID int) *CityStats {
 
 	log.Cities = append(log.Cities, newCityStats)
 
-	fmt.Printf("new %p\n", &log.Cities[len(log.Cities)-1])
-
 	return &log.Cities[len(log.Cities)-1]
+}
+
+func groupCouriersByCity(couriers []connectedCourierStats) map[int][]connectedCourierStats {
+	var groupByCity = map[int][]connectedCourierStats{}
+
+	for _, courier := range couriers {
+		groupByCity[courier.CityID] = append(groupByCity[courier.CityID], courier)
+	}
+
+	return groupByCity
 }
 
 func NewTaskLogger(rethinkSession *r.Session, mongoDb *mgo.Database) TaskLogger {

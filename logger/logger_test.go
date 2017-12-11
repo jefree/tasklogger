@@ -20,8 +20,8 @@ var _ = Describe("TaskLogger", func() {
 	Describe("CreateLog", func() {
 		AfterEach(func() {
 			// empty mongo database
-			mongoSession.DB("mu_test").C("tasks_log").Remove(bson.M{})
-			mongoSession.DB("mu_test").C("couriers_log").Remove(bson.M{})
+			mongoSession.DB("mu_test").C("tasks_log").RemoveAll(bson.M{})
+			mongoSession.DB("mu_test").C("couriers_log").RemoveAll(bson.M{})
 
 			// empty rethink database
 			r.Table("tasks").Delete().Run(rethinkSession)
@@ -101,14 +101,14 @@ var _ = Describe("TaskLogger", func() {
 				},
 			}).Run(rethinkSession)
 
-			mongoCouriersLog.Insert([]bson.M{
+			err := mongoCouriersLog.Insert(
 				bson.M{
 					"date": "2017-12-11 14:28",
 					"couriers": []bson.M{
 						{
-							"id":          1,
-							"tasks_count": 2,
-							"city_id":     1,
+							"id":         1,
+							"task_count": 2,
+							"city_id":    1,
 						},
 					},
 				},
@@ -116,18 +116,22 @@ var _ = Describe("TaskLogger", func() {
 					"date": "2017-12-11 14:29",
 					"couriers": []bson.M{
 						{
-							"id":          1,
-							"tasks_count": 1,
-							"city_id":     1,
+							"id":         1,
+							"task_count": 1,
+							"city_id":    1,
 						},
 						{
-							"id":          4,
-							"tasks_count": 0,
-							"city_id":     4,
+							"id":         4,
+							"task_count": 0,
+							"city_id":    4,
 						},
 					},
 				},
-			})
+			)
+
+			if err != nil {
+				panic(err)
+			}
 
 			city1 := logger.CityStats{
 				CityID: 1,
@@ -139,21 +143,7 @@ var _ = Describe("TaskLogger", func() {
 				Couriers: logger.CouriersStats{
 					Working:          2,
 					ConnectedWorking: 1,
-					Connected:        1,
-				},
-			}
-
-			city2 := logger.CityStats{
-				CityID: 2,
-				Tasks: logger.TasksStats{
-					Waiting:    0,
-					Assigned:   0,
-					InProgress: 0,
-				},
-				Couriers: logger.CouriersStats{
-					Working:          0,
-					ConnectedWorking: 0,
-					Connected:        0,
+					ConnectedFree:    0,
 				},
 			}
 
@@ -167,7 +157,7 @@ var _ = Describe("TaskLogger", func() {
 				Couriers: logger.CouriersStats{
 					Working:          1,
 					ConnectedWorking: 0,
-					Connected:        0,
+					ConnectedFree:    0,
 				},
 			}
 
@@ -181,14 +171,14 @@ var _ = Describe("TaskLogger", func() {
 				Couriers: logger.CouriersStats{
 					Working:          0,
 					ConnectedWorking: 0,
-					Connected:        1,
+					ConnectedFree:    1,
 				},
 			}
 
 			log := taskLogger.CreateLog()
 
 			Expect(log.Date.IsZero()).To(BeFalse())
-			Expect(log.Cities).To(ConsistOf(city1, city2, city3, city4))
+			Expect(log.Cities).To(ConsistOf(city1, city3, city4))
 		})
 	})
 })
