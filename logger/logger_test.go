@@ -20,7 +20,6 @@ var _ = Describe("TaskLogger", func() {
 	Describe("CreateLog", func() {
 		AfterEach(func() {
 			// empty mongo database
-			mongoSession.DB("mu_test").C("tasks_log").RemoveAll(bson.M{})
 			mongoSession.DB("mu_test").C("couriers_log").RemoveAll(bson.M{})
 
 			// empty rethink database

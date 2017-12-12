@@ -1,9 +1,13 @@
 package main
 
 import (
+	"net/http"
 	"os"
 	"syscall"
+
+	"tasklogger/connection"
 	"tasklogger/logger"
+	"tasklogger/logticker"
 
 	"github.com/spf13/viper"
 	r "gopkg.in/gorethink/gorethink.v3"
@@ -43,10 +47,16 @@ func main() {
 	}
 
 	taskLogger := logger.NewTaskLogger(rethinkSession, mongoSession.DB(config.mongo.database))
-	taskLogger.SaveLog()
 
-	rethinkSession.Close()
-	mongoSession.Close()
+	go logticker.RunLogTicker(taskLogger)
+	go logticker.RunPingTicker()
+
+	http.HandleFunc("/task_log", connection.HandleNewClient)
+
+	err = http.ListenAndServe(":8010", nil)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func loadConfiguration() configuration {

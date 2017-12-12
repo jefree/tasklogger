@@ -9,17 +9,21 @@ import (
 )
 
 type CityStats struct {
-	CityID   int
-	Tasks    TasksStats
-	Couriers CouriersStats
+	CityID   int           `json:"city_id" bson:"city_id"`
+	Tasks    TasksStats    `json:"tasks"`
+	Couriers CouriersStats `json:"couriers"`
 }
 
 type TasksStats struct {
-	Waiting, Assigned, InProgress int
+	Waiting    int `json:"waiting"`
+	Assigned   int `json:"assigned"`
+	InProgress int `json:"in_progress" bson:"in_progress"`
 }
 
 type CouriersStats struct {
-	Working, ConnectedFree, ConnectedWorking int
+	Working          int `json:"working"`
+	ConnectedFree    int `json:"connected_free" bson:"connected_free"`
+	ConnectedWorking int `json:"connected_working" bson:"connected_working"`
 }
 
 type countByCityStatus struct {
@@ -57,6 +61,13 @@ func (logger TaskLogger) CreateLog() Log {
 	log.populateConnectedCouriersStatsByCity(logger.getConnectedCouriersStats())
 
 	return log
+}
+
+func (logger TaskLogger) SaveLog(log Log) {
+	err := logger.mongoDb.C("tasks_log").Insert(log)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (logger TaskLogger) getTasksByCityStatus() []countByCityStatus {
@@ -102,8 +113,8 @@ func (logger TaskLogger) getWorkingCouriersByCity() []workingCouriersByCity {
 }
 
 type Log struct {
-	Date   time.Time
-	Cities []CityStats
+	Date   time.Time   `json:"date"`
+	Cities []CityStats `json:"cities"`
 }
 
 func (log *Log) populateTasksStatsByCity(stats []countByCityStatus) {
