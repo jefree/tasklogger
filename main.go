@@ -23,6 +23,9 @@ type configuration struct {
 	mongo struct {
 		host     string
 		database string
+		user     string
+		pwd      string
+		src      string
 	}
 }
 
@@ -41,7 +44,11 @@ func main() {
 		panic("Error connecting to RethinkDB")
 	}
 
-	mongoSession, err := mgo.Dial(config.mongo.host)
+	mongoSession, err := mgo.DialWithInfo(&mgo.DialInfo{
+		Addrs:    []string{config.mongo.host},
+		Username: config.mongo.user,
+		Password: config.mongo.pwd,
+	})
 	if err != nil {
 		panic("Error connecting to MongoDB")
 	}
@@ -73,8 +80,12 @@ func loadConfiguration() configuration {
 
 	config.rethink.addresses = viper.GetStringSlice("rethink.addresses")
 	config.rethink.database = viper.GetString("rethink.database")
+
 	config.mongo.host = viper.GetString("mongo.host")
 	config.mongo.database = viper.GetString("mongo.database")
+	config.mongo.user = viper.GetString("mongo.user")
+	config.mongo.pwd = viper.GetString("mongo.pwd")
+	config.mongo.src = viper.GetString("mongo.src")
 
 	return config
 }
