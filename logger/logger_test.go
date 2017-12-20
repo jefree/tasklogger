@@ -43,9 +43,10 @@ var _ = Describe("TaskLogger", func() {
 					"city_id":   1, // city 1
 				},
 				{
-					"id":        3,
-					"status_id": 5, // finished
-					"city_id":   2, // city 2
+					"id":                3,
+					"status_id":         5, // finished
+					"city_id":           2, // city 2
+					"global_courier_id": 3,
 				},
 				{
 					"id":        4,
@@ -53,19 +54,22 @@ var _ = Describe("TaskLogger", func() {
 					"city_id":   3, // city 3
 				},
 				{
-					"id":        5,
-					"status_id": 3, // assigned
-					"city_id":   1, // city 1
+					"id":                5,
+					"status_id":         3, // assigned
+					"city_id":           1, // city 1
+					"global_courier_id": 1,
 				},
 				{
-					"id":        6,
-					"status_id": 4, // in progress
-					"city_id":   1, // city 1
+					"id":                6,
+					"status_id":         4, // in progress
+					"city_id":           1, // city 1
+					"global_courier_id": 2,
 				},
 				{
-					"id":        7,
-					"status_id": 4, // in progress
-					"city_id":   3, // city 3
+					"id":                7,
+					"status_id":         4, // in progress
+					"city_id":           3, // city 3
+					"global_courier_id": 4,
 				},
 			}).Run(rethinkSession)
 
@@ -77,26 +81,26 @@ var _ = Describe("TaskLogger", func() {
 					"active_tasks_express": []int{},
 				},
 				{
-					"global_courier_id":    2,
+					"id":                   2,
 					"city_id":              1,
 					"active_task_delivery": []int{6},
 					"active_tasks_express": []int{},
 				},
 				{
-					"global_courier_id":    3,
+					"id":                   3,
 					"city_id":              2,
 					"active_task_delivery": []int{},
 					"active_tasks_express": []int{},
 				},
 				{
-					"global_courier_id":    3,
+					"id":                   4,
 					"city_id":              3,
 					"active_task_delivery": []int{},
 					"active_tasks_express": []int{7},
 				},
 				{
-					"global_courier_id": 4,
-					"city_id":           4,
+					"id":      5,
+					"city_id": 4,
 				},
 			}).Run(rethinkSession)
 

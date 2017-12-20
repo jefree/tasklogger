@@ -97,11 +97,14 @@ func (logger TaskLogger) getConnectedCouriersStats() []connectedCourierStats {
 func (logger TaskLogger) getWorkingCouriersByCity() []workingCouriersByCity {
 	var result []workingCouriersByCity
 
-	cursor, err := r.Table("couriers").
-		Filter(r.Row.Field("active_task_delivery").Count().Gt(0).
-			Or(r.Row.Field("active_tasks_express").Count().Gt(0))).
-		Group("city_id").
-		Count().Run(logger.rethinkSession)
+	cursor, err := r.Table("tasks").GetAllByIndex("status_id", 3, 4).
+		Group("global_courier_id").Ungroup().
+		EqJoin("group", r.Table("couriers")).
+		Map(func(group r.Term) interface{} {
+			return group.Field("right")
+		}).
+		Group("city_id").Count().
+		Run(logger.rethinkSession)
 
 	if err != nil {
 		panic(err)
